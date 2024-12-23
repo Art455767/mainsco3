@@ -62,20 +62,34 @@ class PostRepositoryImpl(private val dao: PostDao) : PostRepository {
     }
 
     override suspend fun likeById(id: Long) {
+
+        val originalPost = dao.getById(id) ?: return
+        val newLikedByMe = !originalPost.likedByMe
+        val updatedPost = originalPost.copy(
+            likedByMe = newLikedByMe,
+            likes = if (newLikedByMe) originalPost.likes + 1 else originalPost.likes - 1
+        )
+
+
+        dao.insert(updatedPost)
+
         try {
-            val post = dao.getById(id) ?: throw ApiError(404, "Post not found")
-            val updatedPost = post.copy(
-                likedByMe = !post.likedByMe,
-                likes = if (post.likedByMe) post.likes - 1 else post.likes + 1
-            )
-            dao.insert(updatedPost)
-            val response = PostsApi.service.likeById(id)
+            val response = if (newLikedByMe) {
+                PostsApi.service.likeById(id)
+            } else {
+                PostsApi.service.dislikeById(id)
+            }
+
             if (!response.isSuccessful) {
                 throw ApiError(response.code(), response.message())
             }
         } catch (e: IOException) {
+
+            dao.insert(originalPost)
             throw NetworkError
         } catch (e: Exception) {
+
+            dao.insert(originalPost)
             throw UnknownError
         }
     }
